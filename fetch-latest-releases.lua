@@ -80,7 +80,8 @@ function m.get_minirootfs(images, destdir)
 		local ok, errmsg = lfs.mkdir(archdir)
 		m.fetch_file(url, string.format("%s/%s", archdir, img.file))
 		m.mkdockerfile(archdir, img.file)
-		print(img.file)
+		print(string.format("Downloaded: %s/%s", img.arch, img.file))
+		io.stdout:flush() -- 强制刷新缓冲区，确保日志实时输出
 	end
 	return { version = img.version, file = img.file, sha512 = img.sha512 }
 end
@@ -125,28 +126,41 @@ end
 local branch = arg[1] or "edge"
 local destdir = arg[2] or "out"
 
-lfs.mkdir(destdir)
+-- 主运行逻辑包裹在循环中，防止容器执行完直接退出
+while true do
+	print(string.format("=== Starting fetch task for branch: %s ===", branch))
+	io.stdout:flush()
 
-local version
-local releases = m.get_releases(branch, destdir)
+	lfs.mkdir(destdir)
 
-if next(releases) == nil then
-	m.fatal("No releases found on %s/%s/releases", m.mirror, branch)
+	local version
+	local releases = m.get_releases(branch, destdir)
+
+	if next(releases) == nil then
+		print(string.format("Error: No releases found on %s/%s/releases", m.mirror, branch))
+	else
+		if not m.equal_versions(releases) then
+			print("Error: not all versions are equal")
+		else
+			local f = io.open(string.format("%s/checksums.sha512", destdir), "w")
+			for arch, rel in pairs(releases) do
+				local line = string.format("%s  %s/%s\n", rel.sha512, arch, rel.file)
+				f:write(line)
+				version = rel.version
+			end
+			f:close()
+
+			-- write version
+			f = io.open(string.format("%s/VERSION", destdir), "w")
+			f:write(version)
+			f:close()
+			print(string.format("=== Task completed successfully. Version: %s ===", tostring(version)))
+		end
+	end
+	io.stdout:flush()
+
+	-- 每次执行完毕后休眠 6 小时（21600秒），你可以根据需要调整时间
+	print("Sleeping for 6 hours before next run...")
+	io.stdout:flush()
+	cqueues.sleep(21600)
 end
-
-if not m.equal_versions(releases) then
-	m.fatal("not all versions are equal")
-end
-
-local f = io.open(string.format("%s/checksums.sha512", destdir), "w")
-for arch, rel in pairs(releases) do
-	local line = string.format("%s  %s/%s\n", rel.sha512, arch, rel.file)
-	f:write(line)
-	version = rel.version
-end
-f:close()
-
--- write version
-f = io.open(string.format("%s/VERSION", destdir), "w")
-f:write(version)
-f:close()
