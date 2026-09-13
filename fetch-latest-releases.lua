@@ -2,6 +2,9 @@
 
 -- script to fetch and parse latest-releases.yaml from master site
 -- and fetch the latest minirootfs images for all available branches
+local socket = require("socket")
+local server = assert(socket.bind("*", 8080))
+server:settimeout(0)
 
 local request = require("http.request")
 local cqueues = require("cqueues")
@@ -128,6 +131,13 @@ local destdir = arg[2] or "out"
 
 -- 主运行逻辑包裹在循环中，防止容器执行完直接退出
 while true do
+	 -- 监听端口，返回 OK 响应
+    local client = server:accept()
+    if client then
+        client:send("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK")
+        client:close()
+    end
+	
 	print(string.format("=== Starting fetch task for branch: %s ===", branch))
 	io.stdout:flush()
 
